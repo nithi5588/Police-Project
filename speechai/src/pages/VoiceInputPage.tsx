@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 import axios from "axios";
 import { exportToDocx } from "../utils/exportToDocx";
 
@@ -31,6 +31,13 @@ const VoiceInputPage: React.FC = () => {
           audioChunksRef.current.push(event.data);
         }
       };
+      mediaRecorder.onstop = () => {
+        console.log(
+          "Recording stopped, audio chunks ready:",
+          audioChunksRef.current
+        );
+        handleTranscribe(); // Now call it here — safe, chunks finalized
+      };
 
       mediaRecorder.start();
       setIsRecording(true);
@@ -42,16 +49,6 @@ const VoiceInputPage: React.FC = () => {
       console.error("Error accessing microphone:", err);
     }
   }, []);
-
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream
-        .getTracks()
-        .forEach((track) => track.stop());
-      setIsRecording(false);
-    }
-  }, [isRecording]);
 
   const handleTranscribe = useCallback(async () => {
     if (audioChunksRef.current.length === 0) {
@@ -68,7 +65,7 @@ const VoiceInputPage: React.FC = () => {
         type: "audio/webm",
       });
       const formData = new FormData();
-      formData.append("audio", audioBlob, "recording.webm");
+      formData.append("file", audioBlob, "recording.webm");
 
       console.log("Sending audio to backend...");
       const response = await axios.post(
@@ -107,6 +104,15 @@ const VoiceInputPage: React.FC = () => {
       setLoading(false);
     }
   }, []);
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream
+        .getTracks()
+        .forEach((track) => track.stop());
+      setIsRecording(false);
+    }
+  }, [isRecording]);
 
   const handleExport = useCallback(() => {
     try {

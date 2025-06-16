@@ -4,6 +4,9 @@ const multer = require("multer");
 const speech = require("@google-cloud/speech");
 const path = require("path");
 const fs = require("fs");
+const ffmpeg = require("fluent-ffmpeg");
+const ffmpegInstaller = require("@ffmpeg-installer/ffmpeg");
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -46,7 +49,7 @@ const client = new speech.SpeechClient({
 });
 
 // Transcribe endpoint
-app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
+app.post("/api/transcribe", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
       console.error("No file uploaded");
@@ -54,48 +57,73 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
     }
 
     console.log("Processing file:", req.file.originalname);
-    const audioBytes = fs.readFileSync(req.file.path).toString("base64");
 
-    const request = {
-      audio: {
-        content: audioBytes,
-      },
-      config: {
-        encoding: "WEBM_OPUS",
-        sampleRateHertz: 16000,
-        languageCode: "te-IN", // Telugu language code
-        enableAutomaticPunctuation: true,
-        model: "default",
-        useEnhanced: true,
-      },
-    };
+    // Prepare paths
+    const inputPath = req.file.path;
+    const outputPath = inputPath.replace(
+      path.extname(inputPath),
+      "_converted.wav"
+    );
 
-    console.log("Sending request to Google Speech-to-Text API");
-    const [response] = await client.recognize(request);
+    // Convert to 16-bit LINEAR16 WAV
+    ffmpeg(inputPath)
+      .audioChannels(1) // mono channel
+      .audioFrequency(16000) // 16kHz sample rate
+      .audioCodec("pcm_s16le") // 16-bit linear PCM
+      .on("end", async () => {
+        console.log("Conversion completed:", outputPath);
 
-    if (!response.results || response.results.length === 0) {
-      console.error("No transcription results");
-      return res.status(400).json({ error: "Could not transcribe audio" });
-    }
+        // Read converted audio file
+        const audioBytes = fs.readFileSync(outputPath).toString("base64");
 
-    const transcription = response.results
-      .map((result) => result.alternatives[0].transcript)
-      .join("\n");
+        const request = {
+          audio: {
+            content: audioBytes,
+          },
+          config: {
+            encoding: "LINEAR16",
+            sampleRateHertz: 16000,
+            languageCode: "te-IN",
+            enableAutomaticPunctuation: true,
+            model: "default",
+            useEnhanced: true,
+          },
+        };
 
-    // Clean up the uploaded file
-    fs.unlinkSync(req.file.path);
-    console.log("Transcription completed successfully");
+        console.log("Sending request to Google Speech-to-Text API");
+        const [response] = await client.recognize(request);
 
-    res.json({ transcription });
+        if (!response.results || response.results.length === 0) {
+          console.error("No transcription results");
+          return res.status(400).json({ error: "Could not transcribe audio" });
+        }
+
+        const transcription = response.results
+          .map((result) => result.alternatives[0].transcript)
+          .join("\n");
+
+        // Clean up files
+        fs.unlinkSync(inputPath);
+        fs.unlinkSync(outputPath);
+        console.log("Transcription completed successfully");
+
+        res.json({ transcription });
+      })
+      .on("error", (err) => {
+        console.error("Error converting audio:", err);
+        fs.unlinkSync(inputPath);
+        res
+          .status(500)
+          .json({ error: "Failed to convert audio: " + err.message });
+      })
+      .save(outputPath);
   } catch (error) {
     console.error("Error processing request:", error);
 
-    // Clean up file if it exists
     if (req.file && fs.existsSync(req.file.path)) {
       fs.unlinkSync(req.file.path);
     }
 
-    // Send appropriate error message
     if (error.code === "LIMIT_FILE_SIZE") {
       res
         .status(400)
@@ -118,7 +146,6 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
     }
   }
 });
-
 // Health check endpoint
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });

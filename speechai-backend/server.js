@@ -71,19 +71,18 @@ const cleanupFiles = (filePath) => {
 app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
   console.log("Received transcribe request:", {
     file: req.file,
-    body: req.body
+    body: req.body,
   });
 
+  let inputPath = null;
+  let outputPath = null;
   try {
-    let inputPath = null;
-    let outputPath = null;
-
     if (!req.file) {
       console.error("No file uploaded");
       return res.status(400).json({
         success: false,
         message: "No audio file provided",
-        error: "No audio file uploaded"
+        error: "No audio file uploaded",
       });
     }
 
@@ -133,7 +132,7 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Could not transcribe audio",
-        error: "No transcription results"
+        error: "No transcription results",
       });
     }
 
@@ -145,7 +144,7 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
     res.json({
       success: true,
       message: "Transcription completed successfully",
-      transcription: transcription
+      transcription: transcription,
     });
   } catch (error) {
     console.error("Error processing audio:", error);
@@ -153,13 +152,13 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
       res.status(400).json({
         success: false,
         message: "File size too large. Maximum size is 10MB",
-        error: error.message
+        error: error.message,
       });
     } else if (error.message === "Only audio files are allowed") {
       res.status(400).json({
         success: false,
         message: "Only audio files are allowed",
-        error: error.message
+        error: error.message,
       });
     } else if (
       error.code === "ENOENT" &&
@@ -168,14 +167,15 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
     ) {
       res.status(500).json({
         success: false,
-        message: "Google Cloud credentials not found. Please check your configuration.",
-        error: error.message
+        message:
+          "Google Cloud credentials not found. Please check your configuration.",
+        error: error.message,
       });
     } else {
       res.status(500).json({
         success: false,
         message: "Error processing audio file",
-        error: error.message || "Unknown error"
+        error: error.message || "Unknown error",
       });
     }
   } finally {
@@ -189,7 +189,7 @@ app.post("/api/transcribe", upload.single("audio"), async (req, res) => {
 app.get("/health", (req, res) => {
   res.json({
     status: "ok",
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   });
 });
 
@@ -199,7 +199,7 @@ app.use((err, req, res, next) => {
   res.status(500).json({
     success: false,
     message: "Internal Server Error",
-    error: err.message || "Unknown error"
+    error: err.message || "Unknown error",
   });
 });
 

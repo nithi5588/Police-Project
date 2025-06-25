@@ -127,22 +127,6 @@ function App() {
       console.error("Error accessing microphone:", err);
     }
   }, []);
-
-  const stopRecording = useCallback(() => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      mediaRecorderRef.current.stream
-        .getTracks()
-        .forEach((track) => track.stop());
-      setIsRecording(false);
-
-      // If in continuous mode, automatically start transcribing
-      if (isContinuousMode) {
-        handleTranscribe();
-      }
-    }
-  }, [isRecording, isContinuousMode]);
-
   const handleTranscribe = useCallback(async () => {
     if (audioChunksRef.current.length === 0) {
       setError("No audio recorded. Please record some audio first.");
@@ -160,78 +144,78 @@ function App() {
       const formData = new FormData();
       formData.append("audio", audioBlob, "recording.webm");
 
-      console.log("Sending audio to backend...");
-      console.log("Audio blob size:", audioBlob.size, "bytes");
+      const response = await transcribeAudio(formData);
 
-      try {
-        const response = await transcribeAudio(formData);
-        console.log("Backend response:", response.data);
-
-        if (response.data.success) {
-          // Append new transcription to existing text
-          setTranscript((prev) => {
-            const newText = response.data.transcription;
-            return prev ? `${prev}\n\n${newText}` : newText;
-          });
-          setSuccess("Transcription added successfully!");
-        } else {
-          throw new Error(response.data.message || "Failed to transcribe audio");
-        }
-      } catch (err) {
-        console.error("Transcription error:", err);
-        setError(err instanceof Error ? err.message : "Failed to transcribe audio");
-        throw err; // Re-throw to maintain existing error handling
-      }
-
-      if (response.data.transcription) {
-        // Append new transcription to existing text
-        setTranscript((prev) => {
-          const newText = response.data.transcription;
-          return prev ? `${prev}\n\n${newText}` : newText;
-        });
+      if (response.data?.transcription) {
+        const newText = response.data.transcription;
+        setTranscript((prev) => (prev ? `${prev}\n\n${newText}` : newText));
         setSuccess("Transcription added successfully!");
 
-        // Clear audio chunks for next recording
-        audioChunksRef.current = [];
-
-        // If in continuous mode, automatically start recording again after a short delay
-        if (isContinuousMode) {
-          if (autoTranscribeTimeoutRef.current) {
-            clearTimeout(autoTranscribeTimeoutRef.current);
-          }
-          autoTranscribeTimeoutRef.current = setTimeout(() => {
-            startRecording();
-          }, 1000); // Wait 1 second before starting next recording
+        // Optionally update segments
+        if (activeCaseId) {
+          setCaseSessions((prev) =>
+            prev.map((caseSession) =>
+              caseSession.id === activeCaseId
+                ? {
+                    ...caseSession,
+                    segments: [
+                      ...caseSession.segments,
+                      {
+                        text: newText,
+                        timestamp: new Date().toLocaleTimeString(),
+                      },
+                    ],
+                  }
+                : caseSession
+            )
+          );
         }
       } else {
         throw new Error("No transcription received from server");
       }
+
+      // Clear recorded chunks
+      audioChunksRef.current = [];
+
+      // Restart recording if in continuous mode
+      if (isContinuousMode) {
+        if (autoTranscribeTimeoutRef.current) {
+          clearTimeout(autoTranscribeTimeoutRef.current);
+        }
+        autoTranscribeTimeoutRef.current = setTimeout(() => {
+          startRecording();
+        }, 1000);
+      }
     } catch (err: any) {
-      console.error("Error transcribing:", err);
+      console.error("Transcription error:", err);
       if (err.response) {
-        // The request was made and the server responded with a status code
-        // that falls out of the range of 2xx
-        console.error("Error response data:", err.response.data);
-        console.error("Error response status:", err.response.status);
         setError(
           `Server error: ${err.response.data.error || err.response.statusText}`
         );
       } else if (err.request) {
-        // The request was made but no response was received
-        console.error("No response received:", err.request);
-        setError(
-          "No response from server. Please check if the backend is running."
-        );
+        setError("No response from server. Is the backend running?");
       } else {
-        // Something happened in setting up the request that triggered an Error
-        console.error("Error setting up request:", err.message);
         setError(`Error: ${err.message}`);
       }
     } finally {
       setLoading(false);
     }
-  }, [isContinuousMode]);
+  }, [isContinuousMode, activeCaseId, startRecording]);
 
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.onstop = () => {
+        handleTranscribe();
+      };
+
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream
+        .getTracks()
+        .forEach((track) => track.stop());
+
+      setIsRecording(false);
+    }
+  }, [isRecording, handleTranscribe]);
   const handleExport = useCallback(() => {
     try {
       exportToDocx(transcript);
@@ -412,7 +396,7 @@ function App() {
             </div>
 
             <div className="flex gap-2 w-full justify-center">
-              <button
+              {/* <button
                 className="px-4 py-2 rounded-md text-sm font-medium bg-blue-600 text-white disabled:opacity-50 hover:bg-blue-700 transition-colors shadow-sm"
                 onClick={handleTranscribe}
                 disabled={
@@ -420,7 +404,7 @@ function App() {
                 }
               >
                 {loading ? "Processing..." : "Transcribe"}
-              </button>
+              </button> */}
 
               <button
                 className="px-4 py-2 rounded-md text-sm font-medium bg-gray-600 text-white disabled:opacity-50 hover:bg-gray-700 transition-colors shadow-sm"
